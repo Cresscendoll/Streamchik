@@ -2,7 +2,7 @@
 // WebRTC + WebSocket signalling, auto-room room-1,
 // индикаторы онлайна, пинг-понг, выбор устройств и прослушка себя.
 
-const SIGNALING_URL = 'ws://91.219.61.150:8080'; // поменяй при необходимости
+const SIGNALING_URL = (window.electronAPI && window.electronAPI.signalingUrl) || 'ws://91.219.61.150:8080'; // поменяй при необходимости
 const ROOM_NAME = 'room-1';
 
 // ---- DOM (заполним после DOMContentLoaded) ----
@@ -26,6 +26,7 @@ let fullscreenButtons;
 
 let localAudioEl;
 let remoteAudioEl;
+let checkUpdatesBtn;
 
 // ---- состояние ----
 let ws = null;
@@ -42,7 +43,7 @@ let ignoreOffer = false;
 // ---- утилиты UI ----
 function setDot(elem, status) {
   if (!elem) return;
-  const validStatuses = ['online', 'offline', 'connecting'];
+  const validStatuses = ['online', 'offline'];
   elem.classList.remove(...validStatuses);
   if (validStatuses.includes(status)) {
     elem.classList.add(status);
@@ -54,11 +55,6 @@ function updateFriendDotFromPC() {
   switch (pc.connectionState) {
     case 'connected':
       setDot(friendDot, 'online');
-      break;
-    case 'connecting':
-    case 'checking':
-    case 'new':
-      setDot(friendDot, 'connecting');
       break;
     default:
       setDot(friendDot, 'offline');
@@ -76,7 +72,7 @@ function safeSend(obj) {
 
 // ---- WebSocket ----
 function setupWebSocket() {
-  setDot(meDot, 'connecting');
+  setDot(meDot, 'offline');
   ws = new WebSocket(SIGNALING_URL);
 
   ws.onopen = () => {
@@ -104,16 +100,8 @@ function setupWebSocket() {
       case 'peers':
         peersCount = msg.count || 0;
         log('Peers in room:', peersCount, msg.ids);
-        // если в комнате больше 1 человека — друг считается онлайн
-        if (peersCount > 1) {
-          if (pc && pc.connectionState === 'connected') {
-            setDot(friendDot, 'online');
-          } else {
-            setDot(friendDot, 'connecting');
-          }
-        } else {
-          setDot(friendDot, 'offline');
-        }
+        // зеленый если в комнате есть второй участник, иначе красный
+        setDot(friendDot, peersCount > 1 ? 'online' : 'offline');
         break;
 
       case 'ping':
@@ -151,7 +139,7 @@ function setupWebSocket() {
   };
 
   ws.onerror = (err) => {
-    console.error('WS error', err);
+    console.error('WS error', SIGNALING_URL, err);
   };
 }
 
@@ -186,7 +174,6 @@ function ensurePeerConnection() {
   pc.onnegotiationneeded = async () => {
     try {
       makingOffer = true;
-      setDot(friendDot, 'connecting');
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
       safeSend({ type: 'offer', sdp: pc.localDescription, room: ROOM_NAME });
@@ -213,7 +200,6 @@ async function handleOffer(msg) {
 
   try {
     await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
-    setDot(friendDot, 'connecting');
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
     safeSend({ type: 'answer', sdp: pc.localDescription, room: ROOM_NAME });
@@ -226,7 +212,6 @@ async function handleAnswer(msg) {
   if (!pc) return;
   try {
     await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
-    setDot(friendDot, 'connecting');
   } catch (e) {
     console.error('handleAnswer error', e);
   }
@@ -288,12 +273,66 @@ function stopMic() {
   if (btnMicOff) btnMicOff.disabled = true;
 }
 
+async function captureScreenStream() {
+  const baseVideo = { frameRate: 60 };
+
+  try {
+    return await navigator.mediaDevices.getDisplayMedia({
+      video: baseVideo,
+      audio: {
+        selfBrowserSurface: 'include',
+        systemAudio: 'include',
+        suppressLocalAudioPlayback: false,
+      },
+    });
+  } catch (err) {
+    console.warn('getDisplayMedia with audio failed, retrying without audio', err);
+  }
+
+  try {
+    return await navigator.mediaDevices.getDisplayMedia({
+      video: baseVideo,
+      audio: false,
+    });
+  } catch (err) {
+    console.warn('getDisplayMedia without audio failed, trying desktopCapturer', err);
+  }
+
+  return await captureViaDesktopCapturer();
+}
+
+async function captureViaDesktopCapturer() {
+  if (!window.electronAPI || !window.electronAPI.getSources) {
+    throw new Error('desktopCapturer is not available');
+  }
+
+  const sources = await window.electronAPI.getSources();
+  const screenSource = Array.isArray(sources)
+    ? (sources.find((s) => typeof s?.id === 'string' && s.id.toLowerCase().includes('screen')) || sources[0])
+    : null;
+
+  if (!screenSource || !screenSource.id) {
+    throw new Error('Не найден ни один экран для захвата');
+  }
+
+  return await navigator.mediaDevices.getUserMedia({
+    audio: false,
+    video: {
+      mandatory: {
+        chromeMediaSource: 'desktop',
+        chromeMediaSourceId: screenSource.id,
+        maxFrameRate: 60,
+      }
+    }
+  });
+}
+
 async function startScreen() {
   try {
-    const stream = await navigator.mediaDevices.getDisplayMedia({
-      video: { frameRate: 60 },
-      audio: true,
-    });
+    const stream = await captureScreenStream();
+    if (!stream) {
+      throw new Error('Не удалось получить захват экрана');
+    }
 
     localScreenStream = stream;
     if (localVideo) localVideo.srcObject = stream;
@@ -309,7 +348,8 @@ async function startScreen() {
     safeSend({ type: 'state', screen: 'on', room: ROOM_NAME });
   } catch (e) {
     console.error('startScreen error', e);
-    alert('Ошибка при запуске стрима');
+    const detail = e && e.message ? `\n\n${e.message}` : '';
+    alert(`Не удалось запустить стрим.${detail}`);
   }
 }
 
@@ -422,13 +462,43 @@ function setupSelfListen() {
   });
 }
 
+async function handleUpdateCheck() {
+  if (!window.electronAPI || !window.electronAPI.checkForUpdates) {
+    alert('Проверка обновлений недоступна в этой сборке.');
+    return;
+  }
+
+  const originalText = checkUpdatesBtn ? checkUpdatesBtn.textContent : '';
+  if (checkUpdatesBtn) {
+    checkUpdatesBtn.disabled = true;
+    checkUpdatesBtn.textContent = 'Проверяем...';
+  }
+
+  try {
+    await window.electronAPI.checkForUpdates();
+  } catch (e) {
+    console.error('checkForUpdates error', e);
+    const detail = e && e.message ? `\n\n${e.message}` : '';
+    alert(`Не удалось проверить обновления.${detail}`);
+  } finally {
+    if (checkUpdatesBtn) {
+      checkUpdatesBtn.disabled = false;
+      checkUpdatesBtn.textContent = originalText || 'Проверить обновления';
+    }
+  }
+}
+
 // ---- старт приложения ----
+
+
+
 window.addEventListener('DOMContentLoaded', async () => {
   // заполняем ссылки на DOM
   btnStartScreen = document.getElementById('startScreen');
   btnStopScreen  = document.getElementById('stopScreen');
   btnMicOn       = document.getElementById('micOn');
   btnMicOff      = document.getElementById('micOff');
+  checkUpdatesBtn = document.getElementById('checkUpdates');
 
   meDot          = document.getElementById('me-dot');
   friendDot      = document.getElementById('friend-dot');
@@ -456,6 +526,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   if (btnMicOff) btnMicOff.addEventListener('click', stopMic);
   if (btnStartScreen) btnStartScreen.addEventListener('click', startScreen);
   if (btnStopScreen) btnStopScreen.addEventListener('click', stopScreen);
+  if (checkUpdatesBtn) checkUpdatesBtn.addEventListener('click', handleUpdateCheck);
 
   if (micSelect) {
     micSelect.addEventListener('change', () => {

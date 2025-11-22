@@ -45,6 +45,39 @@
             height: calc(100vh - 32px);
         }
 
+        #page-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        #page-head h1 {
+            margin: 0;
+        }
+
+        #checkUpdates {
+            padding: 8px 12px;
+            border: 2px solid #e74c3c;
+            background: transparent;
+            color: #f5f5f5;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            cursor: pointer;
+            transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+        }
+
+        #checkUpdates:hover {
+            background: #e74c3c;
+            color: #111;
+        }
+
+        #checkUpdates:disabled {
+            opacity: 0.5;
+            cursor: default;
+        }
+
         /* === Участники === */
         #users {
             background: #222;
@@ -71,11 +104,6 @@
         .status-dot.offline {
             background: #e74c3c;
             box-shadow: 0 0 4px #e74c3c;
-        }
-
-        .status-dot.connecting {
-            background: #f1c40f;
-            box-shadow: 0 0 4px #f1c40f;
         }
 
         /* === Панель управления === */
@@ -182,7 +210,10 @@
 
     <div id="container">
 
-        <h1>Streamchik — голос и экран</h1>
+        <div id="page-head">
+            <h1>Streamchik v1.0.2 — голос и экран</h1>
+            <button id="checkUpdates">Проверить обновления</button>
+        </div>
 
         <!-- Участники -->
         <div id="users">

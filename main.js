@@ -2,7 +2,12 @@ const { app, BrowserWindow, ipcMain, desktopCapturer, dialog } = require("electr
 const { autoUpdater } = require("electron-updater");
 const path = require("path");
 
+const SIGNALING_URL = process.env.SIGNALING_URL || "ws://localhost:8080";
+const SHOULD_START_LOCAL_SIGNALING = SIGNALING_URL.includes("localhost") || SIGNALING_URL.includes("127.0.0.1");
+process.env.SIGNALING_URL = SIGNALING_URL;
+
 let win;
+let localServerStarted = false;
 
 function createWindow() {
     win = new BrowserWindow({
@@ -21,6 +26,17 @@ function createWindow() {
     win.loadFile("index.html");
 }
 
+function ensureLocalSignalingServer() {
+    if (!SHOULD_START_LOCAL_SIGNALING || localServerStarted) return;
+    try {
+        require("./server");
+        localServerStarted = true;
+        console.log(`Local signaling server started at ${SIGNALING_URL}`);
+    } catch (err) {
+        console.error("Failed to start local signaling server", err);
+    }
+}
+
 // ---------- IPC ----------
 ipcMain.on("window-minimize", () => win?.minimize());
 ipcMain.on("window-maximize", () => {
@@ -35,67 +51,121 @@ ipcMain.handle("get-sources", async () => {
 
 // ---------- AUTOUPDATE ----------
 function setupAutoUpdater() {
+    if (!app.isPackaged) {
+        ipcMain.handle("check-for-updates", async () => {
+            await dialog.showMessageBox(win, {
+                type: "info",
+                buttons: ["OK"],
+                title: "Проверка обновлений",
+                message: "Обновления доступны только в собранной версии приложения."
+            });
+            return { ok: false, reason: "dev" };
+        });
+        return;
+    }
+
     autoUpdater.autoDownload = false;
+    let manualUpdateCheck = false;
 
     autoUpdater.on("checking-for-update", () => {
-        console.log("🔍 Проверяю обновления...");
+        console.log("Проверяем обновления...");
     });
 
     autoUpdater.on("update-available", async (info) => {
-        console.log("⚡ Доступно новое обновление! Версия:", info?.version);
+        console.log("Доступно обновление:", info?.version);
 
         const releaseNotes = Array.isArray(info?.releaseNotes)
-            ? info.releaseNotes.map((note) => typeof note === "string" ? note : note?.note).join("\n\n")
+            ? info.releaseNotes
+                .map((note) => typeof note === "string" ? note : note?.note)
+                .join("\n\n")
             : typeof info?.releaseNotes === "string"
                 ? info.releaseNotes
                 : "";
 
         const detailParts = [
-            `Доступна версия ${info?.version ?? ""}.`,
-            releaseNotes ? `Что нового:\n${releaseNotes}` : ""
-        ].filter(Boolean);
+            info?.version ? `Найдена версия ${info.version}.` : "",
+            releaseNotes ? `Изменения:\n${releaseNotes}` : ""
+        ].filter(part => part);
 
         const { response } = await dialog.showMessageBox(win, {
             type: "info",
-            buttons: ["Обновить сейчас", "Позже"],
+            buttons: ["Скачать и установить", "Позже"],
             defaultId: 0,
             cancelId: 1,
             title: "Доступно обновление",
-            message: `Найдена новая версия ${info?.version ?? ""}`,
+            message: info?.version ? `Найдена версия ${info.version}` : "Доступно обновление",
             detail: detailParts.join("\n\n")
         });
 
+        manualUpdateCheck = false;
         if (response === 0) {
             autoUpdater.downloadUpdate();
         }
     });
 
     autoUpdater.on("update-not-available", () => {
-        console.log("✔ Обновлений нет.");
+        console.log("Обновлений нет");
+        if (manualUpdateCheck) {
+            dialog.showMessageBox(win, {
+                type: "info",
+                buttons: ["Ок"],
+                title: "Обновления",
+                message: "Установлена последняя версия"
+            });
+        }
+        manualUpdateCheck = false;
     });
 
     autoUpdater.on("error", (err) => {
-        console.log("❌ Ошибка автообновления:", err);
+        console.log("Ошибка автообновления:", err);
+        if (manualUpdateCheck) {
+            dialog.showMessageBox(win, {
+                type: "error",
+                buttons: ["Закрыть"],
+                title: "Ошибка обновления",
+                message: "Не удалось проверить обновления",
+                detail: err?.message ?? ""
+            });
+        }
+        manualUpdateCheck = false;
     });
 
     autoUpdater.on("download-progress", (p) => {
-        console.log(`📥 Загрузка: ${Math.floor(p.percent)}%`);
+        console.log(`Скачиваем обновление: ${Math.floor(p.percent)}%`);
     });
 
     autoUpdater.on("update-downloaded", async (info) => {
-        console.log("📦 Обновление скачано. Будет установлено при перезапуске.");
+        console.log("Обновление скачано", info?.version);
 
         const { response } = await dialog.showMessageBox(win, {
             type: "question",
-            buttons: ["Перезапустить сейчас", "Позже"],
+            buttons: ["Перезапустить и установить", "Позже"],
             defaultId: 0,
             cancelId: 1,
             title: "Обновление скачано",
-            message: `Установить версию ${info?.version ?? "новую версию"} сейчас?`
+            message: info?.version ? `Установить версию ${info.version} сейчас?` : "Установить обновление сейчас?"
         });
 
         if (response === 0) {
             autoUpdater.quitAndInstall();
+        }
+    });
+
+    ipcMain.handle("check-for-updates", async () => {
+        manualUpdateCheck = true;
+        try {
+            await autoUpdater.checkForUpdates();
+            return { ok: true };
+        } catch (err) {
+            manualUpdateCheck = false;
+            dialog.showMessageBox(win, {
+                type: "error",
+                buttons: ["Закрыть"],
+                title: "Ошибка обновления",
+                message: "Не удалось проверить обновления",
+                detail: err?.message ?? ""
+            });
+            throw err;
         }
     });
 
@@ -104,6 +174,7 @@ function setupAutoUpdater() {
 
 // ---------- APP ----------
 app.whenReady().then(() => {
+    ensureLocalSignalingServer();
     createWindow();
     setupAutoUpdater();
 
