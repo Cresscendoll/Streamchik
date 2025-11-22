@@ -54,28 +54,27 @@ function broadcastPeers(roomName) {
 }
 
 /**
- * Клиент вошёл в комнату
+ * Клиент вошёл в комнату (всегда одна авто-комната)
  */
-function joinRoom(ws, roomName) {
-  const room = rooms.get(roomName) || new Set();
+function joinRoom(ws) {
+  const room = rooms.get(ROOM_NAME) || new Set();
   room.add(ws);
-  rooms.set(roomName, room);
-  ws.roomName = roomName;
+  rooms.set(ROOM_NAME, room);
+  ws.roomName = ROOM_NAME;
   ws.lastPong = Date.now();
   sendJson(ws, {
     type: 'welcome',
-    room: roomName,
+    room: ROOM_NAME,
     id: ws.clientId,
   });
-  broadcastPeers(roomName);
+  broadcastPeers(ROOM_NAME);
 }
 
 /**
  * Клиент вышел
  */
 function leaveRoom(ws) {
-  const roomName = ws.roomName;
-  if (!roomName) return;
+  const roomName = ws.roomName || ROOM_NAME;
   const room = rooms.get(roomName);
   if (!room) return;
   room.delete(ws);
@@ -98,8 +97,8 @@ wss.on('connection', (ws, req) => {
   ws.lastPong = Date.now();
   log(`Client connected ${ws.clientId} from ${req.socket.remoteAddress}`);
 
-  // Автоматически закидываем всех в room-1
-  joinRoom(ws, ROOM_NAME);
+  // Автоматически закидываем всех в единственную комнату
+  joinRoom(ws);
 
   ws.on('message', (data) => {
     let msg;
@@ -132,10 +131,9 @@ wss.on('connection', (ws, req) => {
       }
 
       case 'join':
-        // на будущее — можно будет выбирать комнаты
-        if (msg.room && msg.room !== ws.roomName) {
-          leaveRoom(ws);
-          joinRoom(ws, msg.room);
+        // Все клиенты работают только в ROOM_NAME, игнорируем кастомные комнаты
+        if (ws.roomName !== ROOM_NAME) {
+          joinRoom(ws);
         }
         break;
 

@@ -60,7 +60,22 @@
             border-radius: 50%;
             display: inline-block;
             margin-right: 8px;
-            background: red; /* по умолчанию красный */
+            background: #444; /* базовый цвет */
+        }
+
+        .status-dot.online {
+            background: #2ecc71;
+            box-shadow: 0 0 4px #2ecc71;
+        }
+
+        .status-dot.offline {
+            background: #e74c3c;
+            box-shadow: 0 0 4px #e74c3c;
+        }
+
+        .status-dot.connecting {
+            background: #f1c40f;
+            box-shadow: 0 0 4px #f1c40f;
         }
 
         /* === Панель управления === */
