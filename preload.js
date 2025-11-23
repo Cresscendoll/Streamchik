@@ -1,15 +1,25 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
-const SIGNALING_URL = process.env.SIGNALING_URL || "ws://localhost:8080";
+let signalingUrl = process.env.SIGNALING_URL || "ws://91.219.61.150:8080";
+let roomName = process.env.SIGNALING_ROOM || "room-1";
+
+try {
+    const cfg = require("./config");
+    if (cfg?.signalingUrl) signalingUrl = cfg.signalingUrl;
+    if (cfg?.roomName) roomName = cfg.roomName;
+} catch (err) {
+    console.error("[preload] Failed to load config.js, using defaults:", err?.message);
+}
 
 contextBridge.exposeInMainWorld("electronAPI", {
-    // управление окном
+    // управляющие кнопки окна
     minimize: () => ipcRenderer.send("window-minimize"),
     maximize: () => ipcRenderer.send("window-maximize"),
     close:    () => ipcRenderer.send("window-close"),
 
-    // список доступных экранов (из main.js через desktopCapturer)
+    // доступ к desktopCapturer и автообновлению
     getSources: () => ipcRenderer.invoke("get-sources"),
     checkForUpdates: () => ipcRenderer.invoke("check-for-updates"),
-    signalingUrl: SIGNALING_URL
+    signalingUrl,
+    roomName
 });

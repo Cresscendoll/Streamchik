@@ -3,7 +3,7 @@
 // индикаторы онлайна, пинг-понг, выбор устройств и прослушка себя.
 
 const SIGNALING_URL = (window.electronAPI && window.electronAPI.signalingUrl) || 'ws://91.219.61.150:8080'; // поменяй при необходимости
-const ROOM_NAME = 'room-1';
+const ROOM_NAME = (window.electronAPI && window.electronAPI.roomName) || 'room-1';
 
 // ---- DOM (заполним после DOMContentLoaded) ----
 let btnStartScreen;
@@ -27,6 +27,7 @@ let fullscreenButtons;
 let localAudioEl;
 let remoteAudioEl;
 let checkUpdatesBtn;
+let connectionLogEl;
 
 // ---- состояние ----
 let ws = null;
@@ -65,6 +66,17 @@ function log(...args) {
   console.log('[streamchik]', ...args);
 }
 
+function appendLog(message) {
+  log(message);
+  if (!connectionLogEl) return;
+  const div = document.createElement('div');
+  div.className = 'entry';
+  const ts = new Date().toLocaleTimeString();
+  div.textContent = `[${ts}] ${message}`;
+  connectionLogEl.appendChild(div);
+  connectionLogEl.scrollTop = connectionLogEl.scrollHeight;
+}
+
 function safeSend(obj) {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
   ws.send(JSON.stringify(obj));
@@ -73,10 +85,11 @@ function safeSend(obj) {
 // ---- WebSocket ----
 function setupWebSocket() {
   setDot(meDot, 'offline');
+  appendLog(`Подключаемся к ${SIGNALING_URL}, комната ${ROOM_NAME}`);
   ws = new WebSocket(SIGNALING_URL);
 
   ws.onopen = () => {
-    log('WS open');
+    appendLog(`WS open: ${SIGNALING_URL}, room=${ROOM_NAME}`);
     setDot(meDot, 'online');
     // Авто-join в room-1
     safeSend({ type: 'join', room: ROOM_NAME });
@@ -94,12 +107,20 @@ function setupWebSocket() {
     switch (msg.type) {
       case 'welcome':
         myId = msg.id;
-        log('Welcome, id=', myId, 'room=', msg.room);
+        appendLog(`Welcome, id=${myId}, room=${msg.room}`);
         break;
 
       case 'peers':
-        peersCount = msg.count || 0;
-        log('Peers in room:', peersCount, msg.ids);
+        {
+          const prevCount = peersCount;
+          peersCount = msg.count || 0;
+          appendLog(`Peers in room: ${peersCount} (${(msg.ids || []).join(', ')})`);
+          if (prevCount !== 0 && peersCount > prevCount) {
+            appendLog('Кто-то подключился');
+          } else if (prevCount !== 0 && peersCount < prevCount) {
+            appendLog('Кто-то отключился');
+          }
+        }
         // зеленый если в комнате есть второй участник, иначе красный
         setDot(friendDot, peersCount > 1 ? 'online' : 'offline');
         break;
@@ -132,6 +153,7 @@ function setupWebSocket() {
 
   ws.onclose = () => {
     log('WS closed');
+    appendLog('WS closed, пробую переподключиться через 3s');
     setDot(meDot, 'offline');
     setDot(friendDot, 'offline');
     // попробуем переподключиться
@@ -303,10 +325,13 @@ async function captureScreenStream() {
 
 async function captureViaDesktopCapturer() {
   if (!window.electronAPI || !window.electronAPI.getSources) {
-    throw new Error('desktopCapturer is not available');
+    throw new Error('desktopCapturer bridge is not available (preload failed)');
   }
 
   const sources = await window.electronAPI.getSources();
+  if (!Array.isArray(sources) || sources.length === 0) {
+    throw new Error('desktopCapturer returned no sources');
+  }
   const screenSource = Array.isArray(sources)
     ? (sources.find((s) => typeof s?.id === 'string' && s.id.toLowerCase().includes('screen')) || sources[0])
     : null;
@@ -493,6 +518,7 @@ async function handleUpdateCheck() {
 
 
 window.addEventListener('DOMContentLoaded', async () => {
+  log('electronAPI available:', !!window.electronAPI, 'getSources:', !!(window.electronAPI && window.electronAPI.getSources));
   // заполняем ссылки на DOM
   btnStartScreen = document.getElementById('startScreen');
   btnStopScreen  = document.getElementById('stopScreen');
@@ -515,6 +541,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   localAudioEl   = document.getElementById('localAudio');
   remoteAudioEl  = document.getElementById('remoteAudio');
+  connectionLogEl = document.getElementById('connection-log');
 
   setDot(meDot, 'offline');
   setDot(friendDot, 'offline');
@@ -548,4 +575,5 @@ window.addEventListener('DOMContentLoaded', async () => {
   setupRemoteVolume();
   setupSelfListen();
   setupWebSocket();
+  appendLog(`Конфиг: signaling=${SIGNALING_URL}, room=${ROOM_NAME}`);
 });

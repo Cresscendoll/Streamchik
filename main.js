@@ -1,10 +1,14 @@
 const { app, BrowserWindow, ipcMain, desktopCapturer, dialog } = require("electron");
 const { autoUpdater } = require("electron-updater");
 const path = require("path");
+const { signalingUrl, roomName, startLocalSignaling, signalingPort } = require("./config");
+const { startSignalingServer } = require("./signaling-server");
 
-const SIGNALING_URL = process.env.SIGNALING_URL || "ws://localhost:8080";
-const SHOULD_START_LOCAL_SIGNALING = SIGNALING_URL.includes("localhost") || SIGNALING_URL.includes("127.0.0.1");
+const SIGNALING_URL = signalingUrl;
+const ROOM_NAME = roomName;
+const SHOULD_START_LOCAL_SIGNALING = startLocalSignaling && (SIGNALING_URL.includes("localhost") || SIGNALING_URL.includes("127.0.0.1"));
 process.env.SIGNALING_URL = SIGNALING_URL;
+process.env.SIGNALING_ROOM = ROOM_NAME;
 
 let win;
 let localServerStarted = false;
@@ -15,6 +19,7 @@ function createWindow() {
         height: 720,
         frame: false,
         titleBarStyle: "hidden",
+        title: "Streamchik v1.0.3",
         backgroundColor: "#111",
         webPreferences: {
             preload: path.join(__dirname, "preload.js"),
@@ -29,7 +34,7 @@ function createWindow() {
 function ensureLocalSignalingServer() {
     if (!SHOULD_START_LOCAL_SIGNALING || localServerStarted) return;
     try {
-        require("./server");
+        startSignalingServer({ port: signalingPort });
         localServerStarted = true;
         console.log(`Local signaling server started at ${SIGNALING_URL}`);
     } catch (err) {

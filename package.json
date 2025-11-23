@@ -1,11 +1,11 @@
 {
   "name": "streamchik",
-  "version": "1.0.1",
+  "version": "1.0.3",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --win",
-    "server": "node server.js"
+    "dist": "electron-builder --win --publish never",
+    "server": "node signaling-server.js"
   },
   "build": {
     "appId": "com.streamchik.app",
@@ -13,14 +13,7 @@
     "directories": {
       "output": "dist"
     },
-    "publish": [
-      {
-        "provider": "github",
-        "owner": "Cresscendoll",
-        "repo": "Streamchik",
-        "releaseType": "release"
-      }
-    ],
+    "publish": [],
     "win": {
       "target": "nsis",
       "icon": "icon.ico"

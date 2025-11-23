@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Streamchik</title>
+    <title>Streamchik v1.0.3</title>
 
     <style>
         body {
@@ -55,6 +55,23 @@
 
         #page-head h1 {
             margin: 0;
+        }
+
+        #connection-log {
+            margin-top: 8px;
+            padding: 8px 10px;
+            background: #181818;
+            border: 1px solid #333;
+            border-radius: 6px;
+            font-size: 13px;
+            line-height: 1.4;
+            color: #ccc;
+            max-height: 140px;
+            overflow-y: auto;
+        }
+
+        #connection-log .entry {
+            margin: 0 0 4px 0;
         }
 
         #checkUpdates {
@@ -211,9 +228,11 @@
     <div id="container">
 
         <div id="page-head">
-            <h1>Streamchik v1.0.2 — голос и экран</h1>
+            <h1>Streamchik v1.0.3 - голос и экран</h1>
             <button id="checkUpdates">Проверить обновления</button>
         </div>
+
+        <div id="connection-log"></div>
 
         <!-- Участники -->
         <div id="users">

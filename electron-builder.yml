@@ -1,5 +1,7 @@
 appId: com.streamchik.app
 productName: Streamchik
+artifactName: "${productName}-Setup-${version}.${ext}"
+generateUpdatesFilesForAllChannels: true
 
 directories:
   output: "dist"
@@ -10,11 +12,7 @@ files:
   - "!out/"
   - "**/*"
 
-publish:
-  provider: github
-  owner: Cresscendoll
-  repo: Streamchik
-  releaseType: release   # создаётся GitHub Release автоматически
+publish: []
 
 win:
   target:
@@ -27,3 +25,4 @@ nsis:
   allowToChangeInstallationDirectory: true
   createStartMenuShortcut: true
   shortcutName: "Streamchik"
+  differentialPackage: true
