@@ -1,4 +1,4 @@
-// streamchik 1.0.1 — renderer
+// CreamLine 1.0.5 — renderer
 // WebRTC + WebSocket signalling, auto-room room-1,
 // индикаторы онлайна, пинг-понг, выбор устройств и прослушка себя.
 
@@ -17,6 +17,7 @@ let friendDot;
 let localVideo;
 let remoteVideo;
 let remoteVolume;
+let remoteMediaStream = null;
 
 let selfListenCheckbox;
 let micSelect;
@@ -63,7 +64,7 @@ function updateFriendDotFromPC() {
 }
 
 function log(...args) {
-  console.log('[streamchik]', ...args);
+  console.log('[CreamLine]', ...args);
 }
 
 function appendLog(message) {
@@ -79,6 +80,7 @@ function appendLog(message) {
 
 function safeSend(obj) {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  obj.senderId = myId; // Добавляем ID отправителя для разрешения коллизий
   ws.send(JSON.stringify(obj));
 }
 
@@ -142,8 +144,7 @@ function setupWebSocket() {
         break;
 
       case 'state':
-        // На будущее — можно обновлять UI, пока просто логируем
-        log('Remote state:', msg);
+        handleRemoteState(msg);
         break;
 
       default:
@@ -169,6 +170,7 @@ function setupWebSocket() {
 function ensurePeerConnection() {
   if (pc) return;
 
+  remoteMediaStream = new MediaStream();
   pc = new RTCPeerConnection({
     iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
   });
@@ -183,9 +185,21 @@ function ensurePeerConnection() {
     const stream = event.streams[0];
     if (!stream) return;
 
-    if (remoteVideo) remoteVideo.srcObject = stream;
-    if (remoteAudioEl) remoteAudioEl.srcObject = stream;
-    log('Got remote track');
+    log('Got remote track:', event.track.kind, 'Stream id:', stream.id);
+
+    // Если в стриме есть видео-трек — это экран (даже если там есть и аудио)
+    if (stream.getVideoTracks().length > 0) {
+      if (remoteVideo && remoteVideo.srcObject !== stream) {
+        remoteVideo.srcObject = stream;
+        log('Assigned to remoteVideo');
+      }
+    } else {
+      // Иначе считаем, что это микрофон (аудио-онли)
+      if (remoteAudioEl && remoteAudioEl.srcObject !== stream) {
+        remoteAudioEl.srcObject = stream;
+        log('Assigned to remoteAudioEl');
+      }
+    }
   };
 
   pc.onconnectionstatechange = () => {
@@ -196,8 +210,7 @@ function ensurePeerConnection() {
   pc.onnegotiationneeded = async () => {
     try {
       makingOffer = true;
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
+      await pc.setLocalDescription();
       safeSend({ type: 'offer', sdp: pc.localDescription, room: ROOM_NAME });
     } catch (e) {
       console.error('onnegotiationneeded error', e);
@@ -213,20 +226,43 @@ async function handleOffer(msg) {
   const offerCollision =
     makingOffer || (pc.signalingState !== 'stable');
 
-  ignoreOffer = !offerCollision && msg.polite === false;
+  // "Polite" peer = тот, у кого ID меньше (лексикографически)
+  const polite = (myId || '') < (msg.senderId || '');
+
+  ignoreOffer = !polite && offerCollision;
 
   if (ignoreOffer) {
-    log('Ignoring offer (collision)');
+    log('Ignoring offer (collision, impolite)');
     return;
   }
 
+  if (offerCollision) {
+    // Мы polite, уступаем. Откатываемся, чтобы принять их оффер.
+    log('Collision detected, rolling back (polite)');
+    try {
+      await Promise.all([
+        pc.setLocalDescription({ type: 'rollback' }),
+        pc.setRemoteDescription(new RTCSessionDescription(msg.sdp))
+      ]);
+    } catch (e) {
+      console.error('Rollback/SRD error', e);
+    }
+  } else {
+    try {
+      await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+    } catch (e) {
+      console.error('setRemoteDescription error', e);
+    }
+  }
+
+  // Отвечаем на offer
   try {
-    await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
-    const answer = await pc.createAnswer();
-    await pc.setLocalDescription(answer);
-    safeSend({ type: 'answer', sdp: pc.localDescription, room: ROOM_NAME });
+    if (pc.signalingState === 'have-remote-offer') {
+      await pc.setLocalDescription();
+      safeSend({ type: 'answer', sdp: pc.localDescription, room: ROOM_NAME });
+    }
   } catch (e) {
-    console.error('handleOffer error', e);
+    console.error('createAnswer error', e);
   }
 }
 
@@ -244,7 +280,20 @@ async function handleRemoteIce(msg) {
   try {
     await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
   } catch (e) {
-    console.error('addIceCandidate error', e);
+    if (!ignoreOffer) {
+      console.error('addIceCandidate error', e);
+    }
+  }
+}
+
+function handleRemoteState(msg) {
+  log('Remote state:', msg);
+  if (msg.screen === 'off') {
+    if (remoteVideo) {
+      remoteVideo.srcObject = null;
+    }
+    // Также можно очистить remoteAudioEl, если нужно
+    // if (remoteAudioEl) remoteAudioEl.srcObject = null;
   }
 }
 
@@ -340,16 +389,35 @@ async function captureViaDesktopCapturer() {
     throw new Error('Не найден ни один экран для захвата');
   }
 
-  return await navigator.mediaDevices.getUserMedia({
-    audio: false,
-    video: {
-      mandatory: {
-        chromeMediaSource: 'desktop',
-        chromeMediaSourceId: screenSource.id,
-        maxFrameRate: 60,
+  try {
+    return await navigator.mediaDevices.getUserMedia({
+      audio: {
+        mandatory: {
+          chromeMediaSource: 'desktop',
+          chromeMediaSourceId: screenSource.id,
+        }
+      },
+      video: {
+        mandatory: {
+          chromeMediaSource: 'desktop',
+          chromeMediaSourceId: screenSource.id,
+          maxFrameRate: 60,
+        }
       }
-    }
-  });
+    });
+  } catch (err) {
+    console.warn('captureViaDesktopCapturer audio failed, trying video only', err);
+    return await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: {
+        mandatory: {
+          chromeMediaSource: 'desktop',
+          chromeMediaSourceId: screenSource.id,
+          maxFrameRate: 60,
+        }
+      }
+    });
+  }
 }
 
 async function startScreen() {
@@ -357,6 +425,11 @@ async function startScreen() {
     const stream = await captureScreenStream();
     if (!stream) {
       throw new Error('Не удалось получить захват экрана');
+    }
+
+    if (stream.getAudioTracks().length === 0) {
+      console.warn('В стриме экрана нет аудио-трека (пользователь не выбрал "Share system audio"?)');
+      // Можно добавить уведомление пользователю, если критично
     }
 
     localScreenStream = stream;
@@ -384,10 +457,13 @@ function stopScreen() {
     localScreenStream = null;
   }
 
-  if (pc) {
-    pc.getSenders()
-      .filter(s => s.track && s.track.kind === 'video')
-      .forEach(s => pc.removeTrack(s));
+  if (pc && localScreenStream) {
+    localScreenStream.getTracks().forEach(track => {
+      const sender = pc.getSenders().find(s => s.track === track);
+      if (sender) {
+        pc.removeTrack(sender);
+      }
+    });
   }
 
   if (localVideo) localVideo.srcObject = null;
@@ -475,7 +551,9 @@ function setupRemoteVolume() {
   if (!remoteVolume || !remoteAudioEl) return;
   remoteVolume.addEventListener('input', () => {
     const value = Number(remoteVolume.value || 0);
-    remoteAudioEl.volume = value / 100;
+    const vol = value / 100;
+    if (remoteAudioEl) remoteAudioEl.volume = vol;
+    if (remoteVideo) remoteVideo.volume = vol;
   });
 }
 
@@ -486,6 +564,8 @@ function setupSelfListen() {
     localAudioEl.muted = !selfListenCheckbox.checked;
   });
 }
+
+
 
 async function handleUpdateCheck() {
   if (!window.electronAPI || !window.electronAPI.checkForUpdates) {
@@ -513,6 +593,27 @@ async function handleUpdateCheck() {
   }
 }
 
+// ---- обработка событий обновления ----
+if (window.electronAPI && window.electronAPI.onUpdateProgress) {
+  window.electronAPI.onUpdateProgress((percent) => {
+    if (checkUpdatesBtn) {
+      checkUpdatesBtn.disabled = true;
+      checkUpdatesBtn.textContent = `Скачивание: ${percent}%`;
+    }
+  });
+}
+
+if (window.electronAPI && window.electronAPI.onUpdateError) {
+  window.electronAPI.onUpdateError((err) => {
+    console.error('Update error from main:', err);
+    alert(`Ошибка при скачивании обновления: ${err}`);
+    if (checkUpdatesBtn) {
+      checkUpdatesBtn.disabled = false;
+      checkUpdatesBtn.textContent = 'Проверить обновления';
+    }
+  });
+}
+
 // ---- старт приложения ----
 
 
@@ -521,26 +622,26 @@ window.addEventListener('DOMContentLoaded', async () => {
   log('electronAPI available:', !!window.electronAPI, 'getSources:', !!(window.electronAPI && window.electronAPI.getSources));
   // заполняем ссылки на DOM
   btnStartScreen = document.getElementById('startScreen');
-  btnStopScreen  = document.getElementById('stopScreen');
-  btnMicOn       = document.getElementById('micOn');
-  btnMicOff      = document.getElementById('micOff');
+  btnStopScreen = document.getElementById('stopScreen');
+  btnMicOn = document.getElementById('micOn');
+  btnMicOff = document.getElementById('micOff');
   checkUpdatesBtn = document.getElementById('checkUpdates');
 
-  meDot          = document.getElementById('me-dot');
-  friendDot      = document.getElementById('friend-dot');
+  meDot = document.getElementById('me-dot');
+  friendDot = document.getElementById('friend-dot');
 
-  localVideo     = document.getElementById('localScreen');
-  remoteVideo    = document.getElementById('remoteScreen');
-  remoteVolume   = document.getElementById('remoteScreenVolume');
+  localVideo = document.getElementById('localScreen');
+  remoteVideo = document.getElementById('remoteScreen');
+  remoteVolume = document.getElementById('remoteScreenVolume');
 
   selfListenCheckbox = document.getElementById('selfListen');
-  micSelect      = document.getElementById('micSelect');
-  outSelect      = document.getElementById('outSelect');
+  micSelect = document.getElementById('micSelect');
+  outSelect = document.getElementById('outSelect');
 
   fullscreenButtons = document.querySelectorAll('.fullscreen-btn');
 
-  localAudioEl   = document.getElementById('localAudio');
-  remoteAudioEl  = document.getElementById('remoteAudio');
+  localAudioEl = document.getElementById('localAudio');
+  remoteAudioEl = document.getElementById('remoteAudio');
   connectionLogEl = document.getElementById('connection-log');
 
   setDot(meDot, 'offline');

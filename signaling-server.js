@@ -1,4 +1,4 @@
-// Streamchik signalling server (WebSocket for WebRTC)
+// CreamLine signalling server (WebSocket for WebRTC)
 // Can be started with: node signaling-server.js
 
 const WebSocket = require('ws');

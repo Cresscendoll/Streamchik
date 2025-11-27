@@ -1,6 +1,7 @@
 {
-  "name": "streamchik",
-  "version": "1.0.3",
+  "name": "creamline",
+  "version": "1.0.5",
+  "repository": "https://github.com/Cresscendoll/CreamLine",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -8,21 +9,21 @@
     "server": "node signaling-server.js"
   },
   "build": {
-    "appId": "com.streamchik.app",
-    "productName": "Streamchik",
+    "appId": "com.creamline.app",
+    "productName": "CreamLine",
     "directories": {
       "output": "dist"
     },
     "publish": [],
     "win": {
       "target": "nsis",
-      "icon": "icon.ico"
+      "icon": "build/icon.ico"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "shortcutName": "Streamchik"
+      "shortcutName": "CreamLine"
     }
   },
   "dependencies": {

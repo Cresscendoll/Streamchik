@@ -1,4 +1,4 @@
-// streamchik 1.0.1 — signalling server
+// CreamLine 1.0.5 — signalling server
 // Авто-комната room-1, пинг-понг, логирование подключений
 
 const WebSocket = require('ws');

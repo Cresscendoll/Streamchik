@@ -21,5 +21,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
     getSources: () => ipcRenderer.invoke("get-sources"),
     checkForUpdates: () => ipcRenderer.invoke("check-for-updates"),
     signalingUrl,
-    roomName
+    roomName,
+    onUpdateProgress: (callback) => ipcRenderer.on('update-download-progress', (_event, value) => callback(value)),
+    onUpdateError: (callback) => ipcRenderer.on('update-error', (_event, value) => callback(value))
 });

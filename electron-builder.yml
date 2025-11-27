@@ -1,6 +1,9 @@
-appId: com.streamchik.app
-productName: Streamchik
-artifactName: "${productName}-Setup-${version}.${ext}"
+appId: com.creamline.app
+productName: CreamLine
+artifactName: "${productName}-Setup-${buildVersion}.${ext}"
+buildVersion: "1.0.5"
+extraMetadata:
+  version: "1.0.5"
 generateUpdatesFilesForAllChannels: true
 
 directories:
@@ -17,12 +20,12 @@ publish: []
 win:
   target:
     - nsis
-  icon: icon.ico
+  icon: build/icon.ico
 
 nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
   createStartMenuShortcut: true
-  shortcutName: "Streamchik"
+  shortcutName: "CreamLine"
   differentialPackage: true

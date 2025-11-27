@@ -19,7 +19,8 @@ function createWindow() {
         height: 720,
         frame: false,
         titleBarStyle: "hidden",
-        title: "Streamchik v1.0.3",
+        title: "CreamLine v1.0.5",
+        icon: "build/icon.png",
         backgroundColor: "#111",
         webPreferences: {
             preload: path.join(__dirname, "preload.js"),
@@ -123,6 +124,7 @@ function setupAutoUpdater() {
 
     autoUpdater.on("error", (err) => {
         console.log("Ошибка автообновления:", err);
+        if (win) win.webContents.send("update-error", err?.message || "Unknown error");
         if (manualUpdateCheck) {
             dialog.showMessageBox(win, {
                 type: "error",
@@ -136,7 +138,9 @@ function setupAutoUpdater() {
     });
 
     autoUpdater.on("download-progress", (p) => {
-        console.log(`Скачиваем обновление: ${Math.floor(p.percent)}%`);
+        const percent = Math.floor(p.percent);
+        console.log(`Скачиваем обновление: ${percent}%`);
+        if (win) win.webContents.send("update-download-progress", percent);
     });
 
     autoUpdater.on("update-downloaded", async (info) => {
