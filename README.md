@@ -1,16 +1,30 @@
 # CreamLine
 
-**CreamLine** is an Electron-based screen sharing and streaming application utilizing WebRTC for real-time peer-to-peer communication. Version 1.0.5.
+![CreamLine Architecture](assets/architecture_diagram.png)
 
-## Architecture Diagram
+**CreamLine** is a modern Electron-based screen sharing and streaming application utilizing WebRTC for low-latency, real-time peer-to-peer communication.
+
+---
+
+## 🚀 Features
+
+- **🖥️ Screen Sharing**: High-quality screen streaming to connected peers.
+- **⚡ WebRTC**: Powered by WebRTC for minimal latency and direct P2P connections.
+- **📡 Signaling Server**: Integrated WebSocket server for seamless connection coordination.
+- **🔄 Auto-Updates**: Built-in support for automatic updates via `electron-updater`.
+- **🔌 Plug & Play**: Automatic room connection (`room-1`) for instant collaboration.
+
+## 🛠️ Architecture
+
+The following diagram illustrates the internal structure and data flow of the application.
 
 ```mermaid
 graph TD
     subgraph Electron App
-        Main[main.js (Main Process)]
-        Renderer[renderer.js (Renderer Process)]
-        UI[index.html (UI)]
-        Config[config.js]
+        Main["main.js (Main Process)"]
+        Renderer["renderer.js (Renderer Process)"]
+        UI["index.html (UI)"]
+        Config["config.js"]
         
         Main -->|Creates| Renderer
         Renderer -->|Loads| UI
@@ -18,8 +32,8 @@ graph TD
     end
 
     subgraph Signaling
-        SigServer[server.js / signaling-server.js]
-        RemoteClient[Remote Peer]
+        SigServer["server.js / signaling-server.js"]
+        RemoteClient["Remote Peer"]
     end
 
     Renderer -->|WebSocket| SigServer
@@ -29,58 +43,61 @@ graph TD
     Main -->|Optional Local Start| SigServer
 ```
 
-## Features
+## 📂 Project Structure
 
-- **Screen Sharing**: Stream your screen to other connected clients.
-- **WebRTC**: Low-latency peer-to-peer streaming.
-- **Signaling Server**: Built-in WebSocket signaling server for connection coordination.
-- **Auto-Updates**: Integrated with `electron-updater` for seamless updates.
-- **Room-Based**: Automatically connects clients to a default room (`room-1`).
+| File | Description |
+|------|-------------|
+| **`main.js`** | **Main Process**: Handles app lifecycle, windows, and auto-updates. |
+| **`renderer.js`** | **Renderer Process**: Manages UI interactions and WebRTC logic. |
+| **`server.js`** | **Signaling Server**: Standalone WebSocket server for peer discovery. |
+| **`index.html`** | **User Interface**: The main application layout. |
+| **`config.js`** | **Configuration**: Centralized settings for signaling URLs and rooms. |
+| **`electron-builder.yml`** | **Build Config**: Settings for creating the Windows installer. |
 
-## Project Structure
+## 📦 Installation
 
-- **`main.js`**: The main process entry point. Handles application lifecycle, window creation, auto-updates, and can start a local signaling server.
-- **`server.js`**: A standalone WebSocket signaling server implementation. Handles peer discovery and message relaying (offer, answer, ice candidates).
-- **`renderer.js`**: The renderer process script (UI logic). Handles the frontend interactions and WebRTC media streams.
-- **`index.html`**: The main application window layout.
-- **`signaling-server.js`**: Module for running the signaling server, used by the main process.
-- **`config.js`**: Configuration file for signaling URLs and room settings.
-- **`electron-builder.yml`**: Configuration for packaging and building the application installer.
-
-## Installation
-
-Ensure you have Node.js installed.
+Ensure you have **Node.js** installed.
 
 ```bash
+# Clone the repository
+git clone https://github.com/Cresscendoll/CreamLine.git
+
+# Go into the app directory
+cd CreamLine
+
 # Install dependencies
 npm install
 ```
 
-## Usage
+## 🚀 Usage
 
-### Development
-
-To start the application in development mode:
-
+### Development Mode
+Start the application locally with hot-reloading:
 ```bash
 npm start
 ```
 
-### Building
-
-To build the application for Windows (creates an installer):
-
+### Build for Production
+Create a Windows installer (`.exe`):
 ```bash
 npm run dist
 ```
+*The installer will be located in the `dist/` folder.*
 
-### Running Signaling Server
-
-To run the signaling server independently:
-
+### Run Signaling Server
+To run the signaling server independently (e.g., on a VPS):
 ```bash
 npm run server
 ```
+
+## 🔧 Configuration
+Settings are managed in `config.js`.
+- **Signaling URL**: WebSocket address (default: `localhost` or remote IP).
+- **Room Name**: Default room is `room-1`.
+
+---
+*Version 1.0.5*
+
 
 ## Configuration
 
