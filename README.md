@@ -96,7 +96,7 @@ Settings are managed in `config.js`.
 - **Room Name**: Default room is `room-1`.
 
 ---
-*Version 1.0.5*
+*Version 1.0.9*
 
 
 ## Configuration

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, desktopCapturer, dialog } = require("electron");
+const { app, BrowserWindow, ipcMain, desktopCapturer, dialog, screen } = require("electron");
 const { autoUpdater } = require("electron-updater");
 const path = require("path");
 const { signalingUrl, roomName, startLocalSignaling, signalingPort } = require("./config");
@@ -14,18 +14,22 @@ let win;
 let localServerStarted = false;
 
 function createWindow() {
+    const { height: workAreaHeight } = screen.getPrimaryDisplay().workAreaSize;
+    const initialHeight = Math.min(900, workAreaHeight);
+
     win = new BrowserWindow({
         width: 1280,
-        height: 720,
+        height: initialHeight,
         frame: false,
         titleBarStyle: "hidden",
-        title: "CreamLine v1.0.5",
+        title: "CreamLine v1.0.9",
         icon: "build/icon.ico",
         backgroundColor: "#111",
         webPreferences: {
             preload: path.join(__dirname, "preload.js"),
             contextIsolation: true,
-            nodeIntegration: false
+            nodeIntegration: false,
+            sandbox: false
         }
     });
 
@@ -52,7 +56,18 @@ ipcMain.on("window-maximize", () => {
 ipcMain.on("window-close", () => win?.close());
 
 ipcMain.handle("get-sources", async () => {
-    return await desktopCapturer.getSources({ types: ["screen"] });
+    const sources = await desktopCapturer.getSources({
+        types: ["screen", "window"],
+        fetchWindowIcons: true,
+        thumbnailSize: { width: 320, height: 180 }
+    });
+
+    return sources.map((source) => ({
+        id: source.id,
+        name: source.name,
+        display_id: source.display_id,
+        thumbnail: source.thumbnail?.toDataURL()
+    }));
 });
 
 // ---------- AUTOUPDATE ----------

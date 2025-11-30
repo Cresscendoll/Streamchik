@@ -1,6 +1,6 @@
 {
   "name": "creamline",
-  "version": "1.0.5",
+  "version": "1.0.9",
   "repository": "https://github.com/Cresscendoll/CreamLine",
   "main": "main.js",
   "scripts": {
@@ -14,6 +14,10 @@
     "directories": {
       "output": "dist",
       "buildResources": "build"
+    },
+    "extraResources": {
+      "from": "build",
+      "to": "build"
     },
     "publish": [],
     "win": {

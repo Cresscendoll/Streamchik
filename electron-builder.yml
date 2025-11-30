@@ -1,9 +1,12 @@
 appId: com.creamline.app
 productName: CreamLine
 artifactName: "${productName}-Setup-${buildVersion}.${ext}"
-buildVersion: "1.0.5"
+buildVersion: "1.0.9"
 extraMetadata:
-  version: "1.0.5"
+  version: "1.0.9"
+extraResources:
+  - from: "build"
+    to: "build"
 generateUpdatesFilesForAllChannels: true
 
 directories:

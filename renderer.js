@@ -1,4 +1,4 @@
-// CreamLine 1.0.5 — renderer
+// CreamLine 1.0.9 - renderer
 // WebRTC + WebSocket signalling, auto-room room-1,
 // индикаторы онлайна, пинг-понг, выбор устройств и прослушка себя.
 
@@ -29,6 +29,7 @@ let localAudioEl;
 let remoteAudioEl;
 let checkUpdatesBtn;
 let connectionLogEl;
+let headerLogo;
 
 // ---- состояние ----
 let ws = null;
@@ -84,6 +85,13 @@ function safeSend(obj) {
   ws.send(JSON.stringify(obj));
 }
 
+function sendPendingOffer() {
+  if (!pc || !pc.localDescription) return;
+  if (pc.localDescription.type !== 'offer') return;
+  if (pc.signalingState !== 'have-local-offer') return;
+  safeSend({ type: 'offer', sdp: pc.localDescription, room: ROOM_NAME });
+}
+
 // ---- WebSocket ----
 function setupWebSocket() {
   setDot(meDot, 'offline');
@@ -95,6 +103,7 @@ function setupWebSocket() {
     setDot(meDot, 'online');
     // Авто-join в room-1
     safeSend({ type: 'join', room: ROOM_NAME });
+    sendPendingOffer();
   };
 
   ws.onmessage = async (event) => {
@@ -344,35 +353,162 @@ function stopMic() {
   if (btnMicOff) btnMicOff.disabled = true;
 }
 
-async function captureScreenStream() {
-  const baseVideo = { frameRate: 60 };
+function renderSourcePicker(sources) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.65);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      padding: 16px;
+    `;
 
-  try {
-    return await navigator.mediaDevices.getDisplayMedia({
-      video: baseVideo,
-      audio: {
-        selfBrowserSurface: 'include',
-        systemAudio: 'include',
-        suppressLocalAudioPlayback: false,
-      },
+    const modal = document.createElement('div');
+    modal.style.cssText = `
+      background: #1c1c1c;
+      color: #f5f5f5;
+      border: 1px solid #333;
+      border-radius: 10px;
+      box-shadow: 0 12px 32px rgba(0,0,0,0.45);
+      width: 90%;
+      max-width: 960px;
+      max-height: 80vh;
+      overflow: auto;
+      padding: 16px;
+      font-family: sans-serif;
+    `;
+
+    const titleRow = document.createElement('div');
+    titleRow.style.cssText = 'display: flex; justify-content: space-between; align-items: center; gap: 8px;';
+    const title = document.createElement('h3');
+    title.textContent = 'Выберите окно или экран для трансляции';
+    title.style.margin = '0';
+    const cancelTop = document.createElement('button');
+    cancelTop.textContent = 'Отмена';
+    cancelTop.style.cssText = `
+      background: transparent;
+      color: #f5f5f5;
+      border: 1px solid #666;
+      padding: 6px 10px;
+      cursor: pointer;
+    `;
+    cancelTop.onclick = () => {
+      cleanup();
+      resolve(null);
+    };
+    titleRow.appendChild(title);
+    titleRow.appendChild(cancelTop);
+
+    const grid = document.createElement('div');
+    grid.style.cssText = `
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    `;
+
+    sources.forEach((source) => {
+      const card = document.createElement('button');
+      card.type = 'button';
+      card.style.cssText = `
+        background: #222;
+        border: 1px solid #333;
+        border-radius: 8px;
+        padding: 8px;
+        text-align: left;
+        cursor: pointer;
+        color: #f5f5f5;
+        transition: border-color 0.15s ease, transform 0.15s ease;
+      `;
+      card.onmouseenter = () => {
+        card.style.borderColor = '#e74c3c';
+        card.style.transform = 'translateY(-2px)';
+      };
+      card.onmouseleave = () => {
+        card.style.borderColor = '#333';
+        card.style.transform = 'none';
+      };
+
+      const thumb = document.createElement('div');
+      thumb.style.cssText = `
+        width: 100%;
+        aspect-ratio: 16 / 9;
+        background: #111;
+        border-radius: 6px;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 8px;
+      `;
+      if (source.thumbnail) {
+        const img = document.createElement('img');
+        img.src = source.thumbnail;
+        img.alt = source.name || 'Источник';
+        img.style.cssText = 'width: 100%; height: 100%; object-fit: cover;';
+        thumb.appendChild(img);
+      } else {
+        const placeholder = document.createElement('div');
+        placeholder.textContent = 'Без превью';
+        placeholder.style.cssText = 'color: #777; font-size: 13px;';
+        thumb.appendChild(placeholder);
+      }
+
+      const label = document.createElement('div');
+      label.textContent = source.name || 'Источник';
+      label.style.cssText = 'font-size: 13px; line-height: 1.4;';
+
+      card.appendChild(thumb);
+      card.appendChild(label);
+
+      card.onclick = () => {
+        cleanup();
+        resolve(source);
+      };
+
+      grid.appendChild(card);
     });
-  } catch (err) {
-    console.warn('getDisplayMedia with audio failed, retrying without audio', err);
-  }
 
-  try {
-    return await navigator.mediaDevices.getDisplayMedia({
-      video: baseVideo,
-      audio: false,
+    const cancelBottom = document.createElement('button');
+    cancelBottom.textContent = 'Отмена';
+    cancelBottom.style.cssText = `
+      margin-top: 12px;
+      background: transparent;
+      color: #f5f5f5;
+      border: 1px solid #666;
+      padding: 8px 12px;
+      cursor: pointer;
+    `;
+    cancelBottom.onclick = () => {
+      cleanup();
+      resolve(null);
+    };
+
+    modal.appendChild(titleRow);
+    modal.appendChild(grid);
+    modal.appendChild(cancelBottom);
+    overlay.appendChild(modal);
+
+    overlay.addEventListener('click', (evt) => {
+      if (evt.target === overlay) {
+        cleanup();
+        resolve(null);
+      }
     });
-  } catch (err) {
-    console.warn('getDisplayMedia without audio failed, trying desktopCapturer', err);
-  }
 
-  return await captureViaDesktopCapturer();
+    function cleanup() {
+      overlay.remove();
+    }
+
+    document.body.appendChild(overlay);
+  });
 }
 
-async function captureViaDesktopCapturer() {
+async function captureScreenStream() {
   if (!window.electronAPI || !window.electronAPI.getSources) {
     throw new Error('desktopCapturer bridge is not available (preload failed)');
   }
@@ -381,55 +517,33 @@ async function captureViaDesktopCapturer() {
   if (!Array.isArray(sources) || sources.length === 0) {
     throw new Error('desktopCapturer returned no sources');
   }
-  const screenSource = Array.isArray(sources)
-    ? (sources.find((s) => typeof s?.id === 'string' && s.id.toLowerCase().includes('screen')) || sources[0])
-    : null;
 
-  if (!screenSource || !screenSource.id) {
-    throw new Error('Не найден ни один экран для захвата');
-  }
+  const selectedSource = await renderSourcePicker(sources);
+  if (!selectedSource || !selectedSource.id) return null;
 
-  try {
-    return await navigator.mediaDevices.getUserMedia({
-      audio: {
-        mandatory: {
-          chromeMediaSource: 'desktop',
-          chromeMediaSourceId: screenSource.id,
-        }
-      },
-      video: {
-        mandatory: {
-          chromeMediaSource: 'desktop',
-          chromeMediaSourceId: screenSource.id,
-          maxFrameRate: 60,
-        }
+  return await navigator.mediaDevices.getUserMedia({
+    audio: {
+      mandatory: {
+        chromeMediaSource: 'desktop',
+        chromeMediaSourceId: selectedSource.id,
       }
-    });
-  } catch (err) {
-    console.warn('captureViaDesktopCapturer audio failed, trying video only', err);
-    return await navigator.mediaDevices.getUserMedia({
-      audio: false,
-      video: {
-        mandatory: {
-          chromeMediaSource: 'desktop',
-          chromeMediaSourceId: screenSource.id,
-          maxFrameRate: 60,
-        }
+    },
+    video: {
+      mandatory: {
+        chromeMediaSource: 'desktop',
+        chromeMediaSourceId: selectedSource.id,
+        maxFrameRate: 60,
       }
-    });
-  }
+    }
+  });
 }
 
 async function startScreen() {
   try {
     const stream = await captureScreenStream();
     if (!stream) {
-      throw new Error('Не удалось получить захват экрана');
-    }
-
-    if (stream.getAudioTracks().length === 0) {
-      console.warn('В стриме экрана нет аудио-трека (пользователь не выбрал "Share system audio"?)');
-      // Можно добавить уведомление пользователю, если критично
+      appendLog('Выбор источника экрана отменен');
+      return;
     }
 
     localScreenStream = stream;
@@ -452,19 +566,21 @@ async function startScreen() {
 }
 
 function stopScreen() {
-  if (localScreenStream) {
-    localScreenStream.getTracks().forEach(t => t.stop());
-    localScreenStream = null;
+  const stream = localScreenStream;
+  if (stream) {
+    stream.getTracks().forEach(t => t.stop());
   }
 
-  if (pc && localScreenStream) {
-    localScreenStream.getTracks().forEach(track => {
+  if (pc && stream) {
+    stream.getTracks().forEach(track => {
       const sender = pc.getSenders().find(s => s.track === track);
       if (sender) {
         pc.removeTrack(sender);
       }
     });
   }
+
+  localScreenStream = null;
 
   if (localVideo) localVideo.srcObject = null;
 
@@ -643,12 +759,21 @@ window.addEventListener('DOMContentLoaded', async () => {
   localAudioEl = document.getElementById('localAudio');
   remoteAudioEl = document.getElementById('remoteAudio');
   connectionLogEl = document.getElementById('connection-log');
+  headerLogo = document.getElementById('header-logo');
 
   setDot(meDot, 'offline');
   setDot(friendDot, 'offline');
 
   if (btnMicOff) btnMicOff.disabled = true;
   if (btnStopScreen) btnStopScreen.disabled = true;
+
+  if (headerLogo) {
+    if (window.paths && window.paths.logo) {
+      headerLogo.src = window.paths.logo;
+    } else {
+      headerLogo.src = 'build/name.png';
+    }
+  }
 
   if (btnMicOn) btnMicOn.addEventListener('click', startMic);
   if (btnMicOff) btnMicOff.addEventListener('click', stopMic);
@@ -671,6 +796,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  await startMic();
   await populateDevices();
   setupFullscreenButtons();
   setupRemoteVolume();
